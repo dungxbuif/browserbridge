@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: browserbridge-postgres
+    environment:
+      POSTGRES_DB: browserbridge
+      POSTGRES_USER: browserbridge
+      POSTGRES_PASSWORD: browserbridge
+    ports:
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
+    volumes:
+      - browserbridge-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U browserbridge -d browserbridge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  browserbridge-postgres-data:

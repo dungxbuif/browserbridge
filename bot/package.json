@@ -1,0 +1,17 @@
+{
+  "name": "browser-bridge-mezon-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js",
+    "worker": "node src/media-worker.js",
+    "check": "node --check src/main.js && node --check src/bot-core.js && node --check src/store.js && node --check src/config.js && node --check src/message.js && node --check src/bridge-client.js && node --check src/media-utils.js && node --check src/tiktok-extractor.js && node --check src/instagram-extractor.js && node --check src/media-worker-core.js && node --check src/media-worker.js && node --check src/scheduler.js && node --check src/lock.js && node --check ../tools/wait_live_ready.mjs && node --check ../tools/export_social_following.mjs && node --check ../tools/verify_social_once_flow.mjs && node --check ../tools/verify_live_readiness_reporting.mjs && node --check ../tools/media_status.mjs && node --check ../tools/configure_mezon_env.mjs && node --check ../tools/verify_extension_package.mjs && node ../tools/verify_extension_package.mjs && npm test",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "mezon-sdk": "^2.8.31",
+    "pg": "^8.13.1"
+  }
+}
