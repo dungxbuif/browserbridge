@@ -3,7 +3,7 @@ artifact_type: api_contract_index
 id: API-MASTER
 status: approved
 owner: shared
-updated: 2026-08-21
+updated: 2026-08-23
 ---
 
 # WSS và MCP contract v0.1
@@ -135,3 +135,35 @@ MCP tool names dùng prefix `browser_`, ví dụ `browser_tabs_list`, `browser_n
 ## Compatibility
 
 Thêm optional field/method là compatible. Xóa/đổi nghĩa field hoặc method cần protocol major mới. Handshake luôn trả capability list để server không gửi method extension chưa hỗ trợ.
+
+## Planned PHASE-004 agent gateway API
+
+These contracts are planned by DESIGN-004/TICKET-011 and are not implemented yet:
+
+| Endpoint | Capability | Purpose |
+| --- | --- | --- |
+| `GET /v1/status/summary` | `social.read` + `media.read` | Counts by platform/job state and queue health; unauthorized sections omitted |
+| `GET /v1/social/users` | `social.read` | Cursor-paginated users with platform/scrape-state filters |
+| `GET /v1/media/jobs` | `media.read` | Jobs and redacted attempt/error summaries |
+| `GET /v1/media/assets/by-drive-file/{id}` | `media.read` | Track a stored asset by Google Drive file ID |
+| `GET /v1/status/workers` | `media.read` | Worker heartbeat, last tick, lag and counters |
+| `GET /v1/operations/errors` | `ops.read` | Locate redacted runtime failures by component, stage, code, job or trace |
+| `GET /v1/operations/errors/{id}` | `ops.read` | Inspect one correlated failure and readable related resources |
+| `POST /v1/collector/jobs` | `social.collect` | Enqueue a bounded profile/following collection |
+| `POST /v1/media/jobs` | `media.enqueue` | Enqueue one normalized browser-visible media item |
+| `POST /v1/media/jobs/{id}/retry` | `media.retry` | Idempotently retry a dead media job |
+| `POST /v1/media/jobs/{id}/cancel` | `media.retry` | Cancel a pending/retry-wait job |
+| `GET /v1/bot/posts` | `bot.read` | Sent media and aggregate interaction state |
+| `GET /v1/bot/posts/{id}/interactions` | `bot.read` | Like/Che/archive detail for one sent item |
+| `POST /v1/bot/send-jobs` | `bot.send` | Enqueue explicit or next eligible mlem media |
+| `POST /v1/bot/media/{asset_id}/archive` | `bot.moderate` | Archive bot eligibility without deleting Drive data |
+
+Planned MCP tools include `bb_social_status`, `bb_social_users_list`, `bb_media_jobs_list`, `bb_worker_status`, `bb_errors_list`, `bb_error_get`, `bb_media_enqueue_download`, `bb_media_retry_job`, `bb_media_cancel_job`, `bb_bot_posts_list`, `bb_bot_interactions`, `bb_bot_send`, and `bb_bot_archive`.
+
+All mutations require a scoped agent session, capability check, idempotency key and redacted audit event. Existing browser shared-token calls remain in compatibility mode during migration.
+
+MCP is the primary executable agent surface; HTTP remains the transport/domain contract. An optional skill may document safe workflows but must never contain API/session/provider keys. Short-lived gateway sessions belong in MCP process configuration or an OS secret store. Runtime failures use a gateway-generated `trace_id` across gateway, extension, workers, Drive and bot, and are persisted in `gateway.operational_errors`; PostgreSQL-outage events fall back to redacted JSON stderr logs.
+
+For social-pipeline upload sessions, `GOOGLE_DRIVE_FOLDER_ID` becomes mandatory and authoritative. A conflicting request-level `drive_folder_id` returns structured error `DRIVE_FOLDER_MISMATCH`; successful status persists and returns `drive_file_id` plus `drive_folder_id` through the media catalog/job APIs.
+
+Exact planned request/response fields, status/error mapping, cursor pagination, idempotency semantics, capability checks, mlem bot endpoints and MCP inputs are defined in [DESIGN-004-API](../work/designs/DESIGN-004-API.md). This annex is normative for TICKET-011 but remains unimplemented until approval.

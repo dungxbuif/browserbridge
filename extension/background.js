@@ -1,119 +1,102 @@
 import { capabilities, defaultConfig, PROTOCOL_VERSION } from "./protocol.js";
 
-let socket;
-let reconnectTimer;
-let heartbeatTimer;
-let reconnectAttempt = 0;
-
 const DIRECT_CHUNK_SIZE = 4 * 1024 * 1024;
 const MAIN_WORLD_CHUNK_SIZE = 1024 * 1024;
 
-chrome.runtime.onInstalled.addListener(() => void connectIfEnabled());
-chrome.runtime.onStartup.addListener(() => void connectIfEnabled());
+chrome.runtime.onInstalled.addListener(() => void bootstrapBridge());
+chrome.runtime.onStartup.addListener(() => void bootstrapBridge());
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || typeof message !== "object") return false;
+
+  // Messages relayed from the offscreen WebSocket transport.
+  if (message.target === "bridge-message") {
+    void handleServerMessage(message.raw).then(sendResponse, sendResponse);
+    return true;
+  }
+
+  // Messages from the popup.
   if (message.type === "status") {
     void getStatus().then(sendResponse);
     return true;
   }
   if (message.type === "reconnect") {
-    void connectIfEnabled().then(() => sendResponse({ ok: true }));
+    void reconnectNow().then(() => sendResponse({ ok: true }));
     return true;
   }
   if (message.type === "set-enabled") {
     void toggleEnabled().then(sendResponse);
     return true;
   }
+  // Heartbeat from the offscreen transport; acknowledge without waking work.
+  if (message.bridge === "keepalive") {
+    sendResponse({ ok: true });
+    return true;
+  }
   return false;
 });
 
+async function ensureOffscreen() {
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
+  if (contexts.length > 0) return;
+  try {
+    await chrome.offscreen.createDocument({
+      url: "offscreen.html",
+      reasons: ["BLOBS"],
+      justification: "keep the Browser Bridge WebSocket alive across service worker lifecycle",
+    });
+  } catch {
+    // already exists or not supported; fall through
+  }
+}
+
+async function bootstrapBridge() {
+  try {
+    await ensureOffscreen();
+    await reconnectNow();
+  } catch {
+    // non-fatal; popup "reconnect" will retry
+  }
+}
+
+async function reconnectNow() {
+  const config = await getConfig();
+  try {
+    await chrome.runtime.sendMessage({ bridge: "connect", config });
+  } catch {
+    await ensureOffscreen();
+    await chrome.runtime.sendMessage({ bridge: "connect", config });
+  }
+}
+
 async function getConfig() {
-  return { ...defaultConfig, ...(await chrome.storage.local.get(defaultConfig)) };
+  const stored = await chrome.storage.local.get(defaultConfig);
+  const config = { ...defaultConfig, ...stored };
+  if (!config.authToken) config.authToken = defaultConfig.authToken;
+  return config;
 }
 
 async function getStatus() {
   const config = await getConfig();
-  return { enabled: config.controlEnabled, connected: socket?.readyState === WebSocket.OPEN, serverUrl: config.serverUrl };
+  let connected = false;
+  try {
+    const r = await chrome.runtime.sendMessage({ bridge: "status" });
+    connected = Boolean(r?.connected);
+  } catch {
+    // no offscreen doc yet
+  }
+  return { enabled: config.controlEnabled, connected, serverUrl: config.serverUrl };
 }
 
 async function toggleEnabled() {
   const config = await getConfig();
   const enabled = !config.controlEnabled;
   await chrome.storage.local.set({ controlEnabled: enabled });
-  if (enabled) await connectIfEnabled();
-  else disconnect();
+  if (enabled) await reconnectNow();
   return getStatus();
 }
 
-async function connectIfEnabled() {
-  const config = await getConfig();
-  if (!config.controlEnabled || !config.authToken || !config.serverUrl) {
-    disconnect();
-    return;
-  }
-  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
-  clearReconnectTimer();
-  try {
-    socket = new WebSocket(config.serverUrl);
-  } catch {
-    scheduleReconnect();
-    return;
-  }
-  socket.onopen = () => {
-    reconnectAttempt = 0;
-    send({ v: PROTOCOL_VERSION, type: "hello", token: config.authToken, capabilities, enabled: true });
-    startHeartbeat();
-  };
-  socket.onmessage = (event) => void handleMessage(event.data);
-  socket.onerror = () => socket?.close();
-  socket.onclose = () => {
-    stopHeartbeat();
-    socket = undefined;
-    void reconnectAfterClose();
-  };
-}
-
-async function reconnectAfterClose() {
-  const config = await getConfig();
-  if (config.controlEnabled) scheduleReconnect();
-}
-
-function disconnect() {
-  clearReconnectTimer();
-  stopHeartbeat();
-  reconnectAttempt = 0;
-  if (socket) {
-    socket.onclose = null;
-    socket.close();
-    socket = undefined;
-  }
-}
-
-function startHeartbeat() {
-  stopHeartbeat();
-  heartbeatTimer = setInterval(() => send({ v: PROTOCOL_VERSION, type: "ping" }), 20_000);
-}
-
-function stopHeartbeat() {
-  if (heartbeatTimer !== undefined) {
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = undefined;
-  }
-}
-
-function scheduleReconnect() {
-  clearReconnectTimer();
-  const base = Math.min(30_000, 500 * 2 ** reconnectAttempt++);
-  reconnectTimer = setTimeout(() => void connectIfEnabled(), base + Math.floor(Math.random() * 250));
-}
-
-function clearReconnectTimer() {
-  if (reconnectTimer !== undefined) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = undefined;
-  }
-}
-
-async function handleMessage(raw) {
+async function handleServerMessage(raw) {
   if (typeof raw !== "string") return;
   let message;
   try {
@@ -123,18 +106,33 @@ async function handleMessage(raw) {
   }
   if (message.v !== PROTOCOL_VERSION) return;
   if (message.type === "ping") {
-    send({ v: PROTOCOL_VERSION, type: "pong" });
+    await sendToBridge({ v: PROTOCOL_VERSION, type: "pong" });
     return;
   }
   if (message.type !== "command" || !message.id || !message.method) return;
   const config = await getConfig();
-  if (!config.controlEnabled) return sendError(message.id, "CONTROL_DISABLED", "Browser control is disabled", false);
-  if (message.deadline_at && Date.parse(message.deadline_at) < Date.now()) return sendError(message.id, "DEADLINE_EXCEEDED", "Command deadline has passed", false);
-  try {
-    send({ v: PROTOCOL_VERSION, type: "result", id: message.id, result: await execute(message.method, message.params ?? {}) });
-  } catch (error) {
-    sendError(message.id, "CHROME_ERROR", error instanceof Error ? error.message : "Chrome command failed", false);
+  if (!config.controlEnabled) {
+    await sendError(message.id, "CONTROL_DISABLED", "Browser control is disabled", false);
+    return;
   }
+  if (message.deadline_at && Date.parse(message.deadline_at) < Date.now()) {
+    await sendError(message.id, "DEADLINE_EXCEEDED", "Command deadline has passed", false);
+    return;
+  }
+  try {
+    const result = await execute(message.method, message.params ?? {});
+    await sendTo({ v: PROTOCOL_VERSION, type: "result", id: message.id, result });
+  } catch (error) {
+    await sendError(message.id, "CHROME_ERROR", error instanceof Error ? error.message : "Chrome command failed", false);
+  }
+}
+
+async function sendTo(message) {
+  await chrome.runtime.sendMessage({ bridge: "send", raw: JSON.stringify(message) });
+}
+
+async function sendError(id, code, messageText, retryable) {
+  await sendTo({ v: PROTOCOL_VERSION, type: "error", id, error: { code, message: messageText, retryable } });
 }
 
 async function execute(method, params) {
@@ -402,10 +400,4 @@ function base64ToBytes(value) {
   return bytes;
 }
 
-function sendError(id, code, message, retryable) {
-  send({ v: PROTOCOL_VERSION, type: "error", id, error: { code, message, retryable } });
-}
-
-function send(message) {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
-}
+void bootstrapBridge();

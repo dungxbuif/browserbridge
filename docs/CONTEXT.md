@@ -3,7 +3,7 @@ artifact_type: project_context
 id: CONTEXT
 status: active
 owner: shared
-updated: 2026-08-23
+updated: 2026-08-24
 ---
 
 # Project Context
@@ -21,6 +21,11 @@ updated: 2026-08-23
 - Mezon bot độc lập đã implement logic gửi media định kỳ hoặc theo command, ghi Like/Che, archive admin-only, event dedup, single-host lock, ignore self-message và normalized Mezon event fields. Button events ưu tiên `message_id` hơn event `id` để reaction/archive audit đúng message chứa media.
 - Owner đã chốt bot name là `mlem`; design deployment dùng `BOT_COMMAND_PREFIX='*mlem'` để command là `*mlem`, `*mlem more`, `*mlem next`, và `*mlem thêm`.
 - `social_media_download/` được chốt làm reference để tối ưu extractor TikTok/Instagram/Facebook, nhưng chỉ dùng media/page-data shape; không copy cơ chế bắt cookie, `webRequest` credential cache hoặc header rewrite.
+- PHASE-004 đã được draft để theo dõi phần còn thiếu: migrate đúng hai schema PostgreSQL `gateway`/`bot`, durable per-media retry/dead-letter, TikTok/Instagram/Facebook parity, fixed Drive folder tracking, và agent API/MCP có permission/audit.
+- Current code vẫn dùng bảng `public`; `media_assets.drive_file_id` đã có nhưng `drive_folder_id`, `media_download_jobs`, attempt logs, Facebook collector và agent status/control API chưa implement. TICKET-008..011 phải được duyệt design trước khi code.
+- PHASE-004 detail design hiện đã implementation-ready ở trạng thái `in_review`: exact database/migration contract, runtime/retry/platform flows và HTTP/MCP/permission/audit/operational-error contract đã được chốt trong ba annex; runtime vẫn chưa thay đổi.
+- **ADR-005 đã thay ADR-004** (deferred) cho auth agent: single-scope API key lưu `gateway.api_keys` (SHA-256 + 4-char suffix), cache Redis không-expire từ container `dev-env` sẵn có, fallback cache-aside sang PostgreSQL, CLI `bb-apikey` issue/list/revoke/sync. Không HTTP route có quyền tạo/xoá key. Mọi read endpoint + POST `/v1/social/users` ở DESIGN-006/TICKET-012; TICKET-011 + DESIGN-004 + ADR-004 đang `deferred` (không xoá). Rủi ro chấp nhận: mọi key = full blast (POST `/v1/runtime/evaluate`), phụ thuộc Redis not-owned, Postgres-before-Redis write order.
+- TICKET-008 đã amend: accepted media worker outage tạm giữa 008-009 (bỏ `scrape_claim_id`/`scrape_claimed_at` sang `gateway.collector_jobs` ở 009); mọi 7 legacy bảng verified **0 row** 2026-08-24 → backfill no-op; `drive_folder_id` và paired `bot.media_delivery_state` đangr scope 008.
 - Command gửi thêm media hỗ trợ prefix cấu hình qua `BOT_COMMAND_PREFIX`; tests hiện cover `*bb`, `*bb more`, `*bb next`, và `*bb thêm`, còn deployment design dùng `*mlem`, `*mlem more`, `*mlem next`, và `*mlem thêm`.
 - Bot/worker config fail-fast với boolean env không hợp lệ cho `MEZON_USE_SSL`, `BOT_SINGLE_HOST_LOCK`, và `SOCIAL_MEDIA_WORKER_RUN_ONCE`.
 - Bot và media worker shutdown path clear interval và guard double signal để giảm rủi ro process/lock treo khi live UAT dừng.
@@ -40,6 +45,12 @@ updated: 2026-08-23
 - Media social chỉ lấy bằng browser session; backend không nhận cookies và upload chunk trực tiếp lên Google Drive.
 - Mezon user và social-platform user là hai identity riêng; bot reaction/archive chỉ dùng Mezon identity.
 - Bot Mezon live dùng tên `mlem` và command prefix `*mlem`.
+- Persistence tương lai dùng đúng hai application schema: `gateway` cho control/social/media/policy/audit và `bot` cho Mezon state.
+- Social pipeline tương lai chỉ upload vào folder `GOOGLE_DRIVE_FOLDER_ID`; mỗi asset phải lưu `drive_file_id` và `drive_folder_id`.
+- Owner confirmed current environment is development with no legacy Drive media files. TICKET-008 may use an empty-media migration path but must abort if preflight unexpectedly finds legacy media rows.
+- Ba platform ưu tiên được hiểu là TikTok, Instagram và Facebook; extension tham khảo chỉ cung cấp media/page-data shapes, không cung cấp credential mechanism để copy.
+- Agent integration direction: MCP là executable control surface; skill chỉ là optional workflow guide. API/session/provider keys không được ghi vào skill hoặc tool arguments và phải nằm trong gateway/MCP process config hoặc OS secret store.
+- Future error visibility uses `gateway.operational_errors` with trace/request/job/attempt/audit correlation and component/stage attribution; PostgreSQL-outage evidence falls back to redacted structured stderr logs.
 
 ## Technical baseline
 
@@ -56,6 +67,7 @@ updated: 2026-08-23
 2. Full browser control: observe, navigate, input, tab/window, downloads/events/evaluate.
 3. MCP integration, real-Chrome E2E, packaging và reliability.
 4. Live social media pipeline: set Mezon credentials with `BOT_COMMAND_PREFIX='*mlem'`, connect BrowserBridge extension in Chrome, import/scrape social users, run worker and `mlem` bot against real channel.
+5. PHASE-004 after design approval: TICKET-008 schema migration -> TICKET-009 media retry/fixed Drive folder (**mandatory**, repairs deliberate worker outage) -> TICKET-012 agent API key + read API -> TICKET-010 three-platform collectors. TICKET-011/MCP/policy/audit deferred until multi-agent or non-localhost.
 
 ## Latest verification
 
@@ -95,6 +107,9 @@ updated: 2026-08-23
 - Passed `rtk node tools/verify_live_readiness_reporting.mjs` on 2026-08-23; fake BrowserBridge verifies readiness output reports env presence as booleans, detects disconnected extension state, includes the Chrome extension hint, calls authenticated `/v1/status`, and does not leak the bridge auth token.
 - Passed `rtk node tools/verify_social_once_flow.mjs` on 2026-08-23 after extending fake-bridge coverage to Instagram; one-shot verifier now covers TikTok and Instagram export -> `social_users` save -> worker tick -> media transfer -> profile tab close.
 - Docs-only reconciliation on 2026-08-23 added [DESIGN-003](work/designs/DESIGN-003-social-media-mezon-mlem-bot.md) for the approved `mlem` bot naming, `*mlem` command prefix, bounded crawl behavior, curated Mezon posting behavior, and `social_media_download` reference guidance for TikTok/Instagram/Facebook extractor optimization. No code tests were required for this docs-only update.
+- Docs-only planning on 2026-08-23 added [PHASE-004](work/phases/PHASE-004-resilient-agent-gateway.md), [DESIGN-005](work/designs/DESIGN-005-two-schema-resilient-social-pipeline.md), [ADR-003](decisions/ADR-003-two-schema-ownership-and-fixed-drive-destination.md), and TICKET-008..011. Claims were checked against current DDL/Drive folder resolution; no implementation tests were run because runtime behavior did not change.
+- Detail-design completion on 2026-08-23 added [DESIGN-005-DATABASE](work/designs/DESIGN-005-DATABASE.md), [DESIGN-005-FLOWS](work/designs/DESIGN-005-FLOWS.md), [DESIGN-004-API](work/designs/DESIGN-004-API.md), and proposed [ADR-004](decisions/ADR-004-scoped-agent-sessions-policy-and-audit.md). Designs now specify exact fields/indexes/migration/rollback, job states/retry/error taxonomy, platform extraction limits, bot send/interaction flow, HTTP/MCP payloads, permissions, pagination, idempotency, redaction and test contracts. Owner approval remains required before TICKET-008 execution.
+- Docs-only refinement on 2026-08-24 added correlated operational-error persistence/query, trace propagation, PostgreSQL-outage structured-log fallback, and the MCP-primary/optional-skill credential boundary. No runtime tests were run because implementation remains pending approval.
 - Readiness still reports setup gaps: `MEZON_BOT_ID`, `MEZON_BOT_TOKEN`, `MEZON_CHANNEL_ID`, `MEZON_ADMIN_USER_ID` not set, and BrowserBridge Chrome extension is not connected.
 
 ## Known platform limits

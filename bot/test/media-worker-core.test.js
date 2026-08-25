@@ -74,7 +74,7 @@ test("scrapeUser uploads extracted media and marks social user scrape metadata",
 
   const result = await scrapeUser({ user, cfg: baseCfg, store, bridge, log: silentLog() });
 
-  assert.deepEqual(calls.opened, [{ url: "https://www.tiktok.com/@creator", options: { active: false } }]);
+  assert.deepEqual(calls.opened, [{ url: "https://www.tiktok.com/@creator", options: { active: true } }]);
   assert.equal(calls.uploads.length, 1);
   assert.equal(calls.uploads[0].tab_id, 123);
   assert.equal(calls.uploads[0].filename, "creator-m1.mp4");

@@ -1,0 +1,18 @@
+import WebSocket from "ws";
+const list = await (await fetch("http://127.0.0.1:9225/json")).json();
+const page = list.find(t=>t.type==="page");
+const sock = new WebSocket(page.webSocketDebuggerUrl);
+let id=0; const pending={};
+const send=(method,params={})=>new Promise((res,rej)=>{const i=++id;pending[i]={res,rej};sock.send(JSON.stringify({id:i,method,params}));});
+sock.onmessage=e=>{const m=JSON.parse(e.data); if(m.id&&pending[m.id]){pending[m.id].res(m.result); delete pending[m.id];}};
+await new Promise(r=>sock.onopen=r);
+await send("Page.enable");
+await send("Page.navigate",{url:"chrome://extensions-manager"});
+await new Promise(r=>setTimeout(r,4000));
+let r=await send("Runtime.evaluate",{expression:"document.body.innerText.slice(0,1200)",returnByValue:true});
+console.log("BODY:",r.result.value);
+await send("Page.navigate",{url:"chrome://extensions-internals"});
+await new Promise(r=>setTimeout(r,2500));
+r=await send("Runtime.evaluate",{expression:"document.body.innerText.slice(0,2500)",returnByValue:true});
+console.log("INTERNALS:",r.result.value);
+process.exit(0);

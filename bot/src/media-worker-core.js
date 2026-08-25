@@ -67,7 +67,7 @@ export async function scrapeUser({ user, cfg, store, bridge, log = console }) {
   if (!profileURL) throw new Error("profile_url is missing");
 
   log.log(`media worker: opening ${profileURL}`);
-  const tab = await bridge.openTab(profileURL, { active: false });
+  const tab = await bridge.openTab(profileURL, { active: true });
   const tabId = tab.id || tab.tab_id;
   if (!tabId) throw new Error("BrowserBridge did not return tab id");
 

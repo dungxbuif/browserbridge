@@ -10,12 +10,17 @@ trace:
     - docs/work/phases/PHASE-001-connected-skeleton.md
     - docs/work/phases/PHASE-002-full-browser-control.md
     - docs/work/phases/PHASE-003-agent-integration.md
+    - docs/work/phases/PHASE-004-resilient-agent-gateway.md
   detail_designs:
     - docs/work/designs/DESIGN-001-browser-bridge-mvp.md
     - docs/work/designs/DESIGN-002-media-drive-chunk-upload.md
+    - docs/work/designs/DESIGN-004-agent-control-api-mcp-permissions.md
+    - docs/work/designs/DESIGN-005-two-schema-resilient-social-pipeline.md
   adrs:
     - docs/decisions/ADR-001-browser-control-foundation.md
     - docs/decisions/ADR-002-browser-media-drive-boundary.md
+    - docs/decisions/ADR-003-two-schema-ownership-and-fixed-drive-destination.md
+    - docs/decisions/ADR-004-scoped-agent-sessions-policy-and-audit.md
 ---
 
 # SRS: Personal Browser Bridge v0.1
@@ -78,6 +83,10 @@ Sau khi Chrome/extension khởi động, extension tự nối tới server. Khi 
 | FR-015 | MCP adapter | Tool call map 1:1 vào browser commands chính |
 | FR-016 | Capability report | Extension báo API/method nào đang hỗ trợ |
 | FR-017 | Browser media upload to Google Drive | Server gọi `media.uploadToDrive`; extension fetch media bằng browser session và upload raw chunks qua backend lên Google Drive resumable upload |
+| FR-018 | Two-schema PostgreSQL ownership | Planned PHASE-004: gateway/social/control data ở schema `gateway`; Mezon bot state ở schema `bot`; migration bảo toàn dữ liệu `public` hiện có |
+| FR-019 | Durable media download jobs | Planned PHASE-004: mỗi media có trạng thái/attempt/retry/dead-letter và lưu `drive_file_id` + `drive_folder_id`; pipeline chỉ dùng `GOOGLE_DRIVE_FOLDER_ID` |
+| FR-020 | Three-platform social collectors | Planned PHASE-004: TikTok, Instagram, Facebook trả normalized media contract từ browser-visible state |
+| FR-021 | Agent control API and MCP | Planned PHASE-004: agent query user/job/worker and correlated component/stage errors, trigger/retry/cancel job, gửi media qua mlem và xem interaction qua capability, policy và redacted audit; MCP là executable surface, skill chỉ hướng dẫn workflow |
 
 ## 5. Non-functional requirements
 
@@ -92,6 +101,9 @@ Sau khi Chrome/extension khởi động, extension tự nối tới server. Khi 
 | NFR-007 | Logs có request ID nhưng redact token và page payload mặc định |
 | NFR-008 | Protocol versioned và unknown optional field không làm hỏng client |
 | NFR-009 | Backend không nhận social cookies/token và không ghi media xuống disk; chunk upload phải tuần tự, bounded size và xác thực bearer |
+| NFR-010 | Platform collectors không copy/export cookie, CSRF/device token, credential-capture hoặc provider header-rewrite từ extension tham khảo |
+| NFR-011 | Retry phải bounded, idempotent, có claim lease, backoff và dead-letter; không tạo duplicate Drive file khi phục hồi |
+| NFR-012 | Agent mutation deny-by-default theo capability và phải có redacted audit event; operational failures có trace ID và component/stage; raw connector/social/OAuth secrets không trả qua API/MCP hoặc lưu trong skill |
 
 ## 6. Luồng chính
 

@@ -46,6 +46,19 @@ shared_fields: [status]
 - Tightened the social user import verifier to assert display/profile/avatar fields, original platform metadata, and immediate scrape eligibility are preserved in `social_users`.
 - Added a live-readiness reporting verifier that uses a fake BrowserBridge to prove env flags are boolean, extension-disconnected hints are present, authenticated status is called, and bridge tokens are not leaked.
 - Extended the one-shot social pipeline verifier to cover both TikTok and Instagram export, worker upload, and profile tab cleanup against a fake BrowserBridge.
+- Added PHASE-004 planning for the remaining resilient agent-controlled social pipeline work, split into TICKET-008..011 with explicit dependencies and acceptance criteria.
+- Added DESIGN-005 and ADR-003 to define exactly two PostgreSQL schemas (`gateway` and `bot`), non-destructive migration ownership, per-media retry/dead-letter, one fixed Google Drive folder, and Drive file/folder ID tracking.
+- Reconciled planned requirements, architecture, API, ERD, SDD, roadmap and validation rows for TikTok/Instagram/Facebook collector parity and scoped/audited agent control APIs/MCP; no runtime behavior changed in this docs-only update.
+- Completed PHASE-004 implementation-ready design annexes: exact two-schema DDL and non-destructive migration/rollback; collector/media/bot sequence and state flows; retry/error/lease/fixed-Drive/platform contracts; and exact agent HTTP/MCP, session, permission, pagination, idempotency, redaction and audit contracts.
+- Added proposed ADR-004 for short-lived scoped agent sessions with deny-by-default policy and shared HTTP/MCP enforcement. Runtime remains unchanged pending owner approval.
+- Refined PHASE-004 design with `gateway.operational_errors`, end-to-end trace/request/job/attempt/audit correlation, component/stage error queries through HTTP/MCP, and a PostgreSQL-outage structured-log fallback.
+- Chose MCP as the primary executable agent surface and limited optional skills to secret-free workflow guidance; API/session/provider credentials remain in gateway/MCP process configuration or OS secret storage.
+- Added ADR-004 (proposed) for scoped agent sessions with deny-by-default policy, redacted audit and shared HTTP/MCP enforcement.
+- **Deferred ADR-004, TICKET-011, DESIGN-004 and its API annex in favour of a single-scope API key model** (ADR-005, TICKET-012, DESIGN-006). The scoped-session model is retained, not rejected, and is additive if the deployment ever gains multiple agents, untrusted callers, a non-localhost bind or an audit requirement.
+- Added ADR-005 to authenticate agents with single-scope API keys stored in `gateway.api_keys` (SHA-256 only) and cached in the existing `dev-env` Redis container with no expiry and a PostgreSQL cache-aside fallback. Key management is CLI-only (`bb-apikey`) and can never be performed through an HTTP route, so one leaked key cannot mint a replacement.
+- **Accepted, recorded risks**: one key grants `POST /v1/runtime/evaluate`; BrowserBridge depends on a Redis container it does not own; issuing/revoking writes PostgreSQL before Redis, so a failed Redis write must be retried; `scripts/doctor.sh` does not manage that container's lifecycle.
+- Amended TICKET-008 to accept a deliberate media-worker outage between it and TICKET-009: dropping the legacy social claim columns removes the collector claim path until `gateway.collector_jobs` exists, so `verify_worker_db_flow` and `verify_social_once_flow` are excluded and the worker is non-functional during the window.
+- Scoped `drive_folder_id` into TICKET-008 so `SaveMediaAsset` writes a non-empty folder and creates the paired `bot.media_delivery_state` row in one transaction, preventing a `NOT NULL` failure immediately after the schema cutover.
 
 ## Field Ownership
 

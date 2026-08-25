@@ -3,7 +3,7 @@ artifact_type: architecture_doc
 id: ARCH-MASTER
 status: approved
 owner: shared
-updated: 2026-08-21
+updated: 2026-08-23
 ---
 
 # Kiến trúc Personal Browser Bridge
@@ -102,4 +102,21 @@ Chrome không cho extension điều khiển đầy đủ browser chrome/UI, `chr
 
 - [ADR-001](../decisions/ADR-001-browser-control-foundation.md)
 - [ADR-002](../decisions/ADR-002-browser-media-drive-boundary.md)
+- [ADR-003](../decisions/ADR-003-two-schema-ownership-and-fixed-drive-destination.md)
+- [ADR-004](../decisions/ADR-004-scoped-agent-sessions-policy-and-audit.md) (proposed)
 - [SRS](../requirements/SPEC.md)
+
+## Planned PHASE-004 evolution
+
+This section is design direction, not implemented behavior.
+
+- Split PostgreSQL ownership into `gateway` for control/social/media jobs/assets/policy/audit/operational errors and `bot` for Mezon state.
+- Replace profile-level-only media errors with durable per-media jobs, attempt history, lease recovery, retry/backoff and dead-letter state.
+- Enforce one social-pipeline Drive destination from `GOOGLE_DRIVE_FOLDER_ID`; persist both Drive file and folder IDs.
+- Normalize TikTok, Instagram and Facebook collectors behind one adapter contract using only browser-visible state.
+- Put agent-readable status, correlated component/stage errors and job mutations behind HTTP/MCP capability checks, redacted audit events and structured operational error events.
+- Use MCP as the executable agent control surface, with optional skills limited to workflows; keep gateway/provider credentials out of skills and tool arguments.
+
+Execution plan: [PHASE-004](../work/phases/PHASE-004-resilient-agent-gateway.md), [DESIGN-004](../work/designs/DESIGN-004-agent-control-api-mcp-permissions.md), and [DESIGN-005](../work/designs/DESIGN-005-two-schema-resilient-social-pipeline.md).
+
+Implementation-ready annexes: [agent API/MCP](../work/designs/DESIGN-004-API.md), [database/migration](../work/designs/DESIGN-005-DATABASE.md), and [runtime/platform flows](../work/designs/DESIGN-005-FLOWS.md). Permission model decision is [ADR-004](../decisions/ADR-004-scoped-agent-sessions-policy-and-audit.md) and remains proposed until owner approval.

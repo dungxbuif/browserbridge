@@ -29,10 +29,24 @@ export function buildTikTokExtractorExpression({ maxMedia }) {
       metadata: item.metadata || {},
     });
   };
+  const absoluteURL = (value) => {
+    if (typeof value !== "string" || !value.trim()) return "";
+    try {
+      const resolved = new URL(value, location.href);
+      return /^https?:$/.test(resolved.protocol) ? resolved.href : "";
+    } catch {
+      return "";
+    }
+  };
   const firstURL = (value) => {
-    if (typeof value === "string" && /^https?:\/\//.test(value)) return value;
-    if (Array.isArray(value)) return value.find((item) => typeof item === "string" && /^https?:\/\//.test(item)) || "";
-    return "";
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const resolved = absoluteURL(item);
+        if (resolved) return resolved;
+      }
+      return "";
+    }
+    return absoluteURL(value);
   };
   const walk = (node, depth = 0) => {
     if (!node || depth > 8 || media.length >= maxMedia) return;
@@ -99,7 +113,7 @@ export function buildTikTokExtractorExpression({ maxMedia }) {
     const href = new URL(anchor.getAttribute("href"), location.href).href;
     const postId = href.match(/\/video\/(\d+)/)?.[1] || href;
     const img = anchor.querySelector("img");
-    const preview = img?.currentSrc || img?.src || "";
+    const preview = firstURL(img?.currentSrc || img?.src || "");
     if (preview) {
       push({
         media_id: postId + "_cover",

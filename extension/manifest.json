@@ -3,7 +3,7 @@
   "name": "Personal Browser Bridge",
   "version": "0.1.0",
   "description": "Connect a personal Chrome profile to Browser Bridge.",
-  "permissions": ["storage", "tabs", "scripting", "activeTab"],
+  "permissions": ["storage", "tabs", "scripting", "activeTab", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_popup": "popup.html" },

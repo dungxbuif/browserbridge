@@ -35,6 +35,8 @@ test("sanitize returns a bounded filesystem-safe token", () => {
 });
 
 test("extractor expressions identify their platforms", () => {
-  assert.match(buildTikTokExtractorExpression({ maxMedia: 5 }), /platform: "tiktok"/);
+  const tiktok = buildTikTokExtractorExpression({ maxMedia: 5 });
+  assert.match(tiktok, /platform: "tiktok"/);
+  assert.match(tiktok, /const resolved = new URL\(value, location\.href\)/);
   assert.match(buildInstagramExtractorExpression({ maxMedia: 5 }), /platform: "instagram"/);
 });

@@ -4,7 +4,7 @@ id: SDD-001
 status: approved
 owner: shared
 approval: approved
-updated: 2026-08-20
+updated: 2026-08-23
 ---
 
 # SDD-001: Personal Browser Bridge MVP
@@ -39,3 +39,9 @@ Hai đầu enforce deadline; bounded message/queue; reconnect exponential backof
 3. MCP E2E/reliability/package.
 
 Chi tiết contract nằm tại [API.md](API.md), plan tại [ROADMAP.md](../work/ROADMAP.md), decision tại [ADR-001](../decisions/ADR-001-browser-control-foundation.md) và [ADR-002](../decisions/ADR-002-browser-media-drive-boundary.md).
+
+## Planned SDD-002 boundary
+
+PHASE-004 is not part of the implemented MVP above. Its approved direction is documented in [DESIGN-004](../work/designs/DESIGN-004-agent-control-api-mcp-permissions.md), [DESIGN-005](../work/designs/DESIGN-005-two-schema-resilient-social-pipeline.md), and [ADR-003](../decisions/ADR-003-two-schema-ownership-and-fixed-drive-destination.md): two PostgreSQL schemas, durable per-media jobs, one fixed Drive folder, TikTok/Instagram/Facebook adapters, scoped/audited agent API/MCP, and trace-correlated operational errors. MCP is the executable agent surface; optional skills are secret-free workflow guidance. This section must be consolidated into a new implemented SDD only after the corresponding tickets pass verification.
+
+Implementation detail is complete in [DESIGN-005-DATABASE](../work/designs/DESIGN-005-DATABASE.md), [DESIGN-005-FLOWS](../work/designs/DESIGN-005-FLOWS.md), and [DESIGN-004-API](../work/designs/DESIGN-004-API.md). These remain planned contracts, not evidence of implemented behavior.
