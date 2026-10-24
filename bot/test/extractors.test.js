@@ -38,5 +38,11 @@ test("extractor expressions identify their platforms", () => {
   const tiktok = buildTikTokExtractorExpression({ maxMedia: 5 });
   assert.match(tiktok, /platform: "tiktok"/);
   assert.match(tiktok, /const resolved = new URL\(value, location\.href\)/);
+  assert.match(tiktok, /\/api\/post\/item_list\//);
+  assert.match(tiktok, /hasMore/);
+  assert.match(tiktok, /cursor/);
+  assert.match(tiktok, /\/photo\//);
+  assert.match(tiktok, /scrollTo/);
+  assert.match(tiktok, /__browserBridgeTikTokItemList/);
   assert.match(buildInstagramExtractorExpression({ maxMedia: 5 }), /platform: "instagram"/);
 });

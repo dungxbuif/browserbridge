@@ -1,12 +1,12 @@
 ---
 artifact_type: ticket
 id: TICKET-009
-status: draft
+status: in_progress
 owner: shared
 priority: high
 lane: high-risk
-approval: pending
-updated: 2026-08-23
+approval: approved_by_owner_chat
+updated: 2026-08-25
 trace:
   backlog_item: docs/work/BACKLOG.md#ticket-009
   feedback: docs/work/FEEDBACK_LOG.md#fb-004--resilient-social-media-agent-gateway
@@ -32,6 +32,8 @@ trace:
 Current worker retries at profile level and records errors in user metadata. Add durable per-media jobs/attempts so an agent can see exactly which image/video failed and safely retry it. Enforce one configured Drive destination and persist the provider IDs needed for tracking.
 
 In scope: `gateway.media_download_jobs`, `gateway.media_download_attempts`, claim leases, retry/backoff/dead state, worker heartbeat, fixed folder validation, `drive_file_id` and `drive_folder_id` persistence, status lookup and tests.
+
+Interim implementation note, 2026-08-25: owner asked to persist each discovered media row before upload after a live TikTok run hit 429 pressure. A pre-migration compatibility slice now creates `public.media_download_jobs`, upserts each extracted media candidate before upload, marks existing assets as `skipped`, marks successful uploads as `succeeded`, and records upload failures as `retry_wait` with `last_error`/`next_retry_at`. This intentionally does not complete the full PHASE-004 `gateway` schema, immutable attempts, claim lease, dead-letter, heartbeat, manual retry API, or fixed-folder enforcement.
 
 Out of scope: extractor implementation, Drive file deletion, moving existing Drive files, multi-folder routing, copying social credentials to backend, and public agent API/MCP endpoints.
 
@@ -69,15 +71,19 @@ Out of scope: extractor implementation, Drive file deletion, moving existing Dri
 
 ## Completion state
 
-- Implementation: not started.
+- Implementation: partial pre-migration media job persistence implemented in `bot/src/store.js` and `bot/src/media-worker-core.js`.
 - UAT: required.
 - Docs reconciliation required: API, ERD, SDD, architecture, deployment, context, validation matrix and changelog.
 
 ## Progress checklist
 
 - [x] Feedback, phase, design, ADR and backlog trace created.
-- [ ] TICKET-008 verified; detail design approved; ticket moved to `ready`.
+- [x] Owner approved an interim pre-migration slice in chat on 2026-08-25 after live crawl pressure caused 429 concern.
+- [ ] TICKET-008 verified; full detail-design cutover ticket moved to `ready`.
+- [x] Pre-upload `public.media_download_jobs` persistence added for extracted media candidates.
+- [x] Upload success/existing/failure states are recorded at job level for the interim worker path.
 - [ ] Queue/retry/folder/Drive tracking implementation complete.
-- [ ] Tests/verification results and fix-cycle counts recorded.
+- [ ] Full retry worker, attempt log, dead-letter, manual retry and heartbeat implementation complete.
+- [ ] Tests/verification results and fix-cycle counts recorded for full queue.
 - [ ] Controlled-failure and real Drive UAT signed off.
 - [ ] Master docs, validation matrix, context, backlog and changelog reconciled.

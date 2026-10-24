@@ -59,6 +59,8 @@ shared_fields: [status]
 - **Accepted, recorded risks**: one key grants `POST /v1/runtime/evaluate`; BrowserBridge depends on a Redis container it does not own; issuing/revoking writes PostgreSQL before Redis, so a failed Redis write must be retried; `scripts/doctor.sh` does not manage that container's lifecycle.
 - Amended TICKET-008 to accept a deliberate media-worker outage between it and TICKET-009: dropping the legacy social claim columns removes the collector claim path until `gateway.collector_jobs` exists, so `verify_worker_db_flow` and `verify_social_once_flow` are excluded and the worker is non-functional during the window.
 - Scoped `drive_folder_id` into TICKET-008 so `SaveMediaAsset` writes a non-empty folder and creates the paired `bot.media_delivery_state` row in one transaction, preventing a `NOT NULL` failure immediately after the schema cutover.
+- Added the first bulk profile-media slice: media worker now reuses matching TikTok/Instagram tabs, opens worker-created profile tabs inactive, closes only worker-owned tabs, and TikTok extraction includes same-origin `/api/post/item_list/` cursor pagination from the active browser session. Added `tools/collect_user_media.mjs` as an agent-callable runner for profile media collection/upload through BrowserBridge.
+- Added interim pre-upload media job persistence in `public.media_download_jobs` so extracted media candidates are saved before Drive upload; worker now marks existing assets as skipped, successful uploads as succeeded, and failed uploads as `retry_wait` with retry timing/error metadata.
 
 ## Field Ownership
 
