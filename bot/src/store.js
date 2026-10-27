@@ -57,6 +57,36 @@ CREATE TABLE IF NOT EXISTS social_users (
   UNIQUE (platform, source_user_id)
 );
 
+CREATE TABLE IF NOT EXISTS media_download_jobs (
+  id BIGSERIAL PRIMARY KEY,
+  platform TEXT NOT NULL,
+  source_user_id TEXT NOT NULL,
+  source_username TEXT NOT NULL DEFAULT '',
+  media_id TEXT NOT NULL,
+  post_id TEXT NOT NULL DEFAULT '',
+  media_url TEXT NOT NULL DEFAULT '',
+  media_type TEXT NOT NULL DEFAULT '',
+  preview_url TEXT NOT NULL DEFAULT '',
+  page_url TEXT NOT NULL DEFAULT '',
+  filename TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'queued',
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  next_retry_at TIMESTAMPTZ,
+  drive_file_id TEXT NOT NULL DEFAULT '',
+  drive_folder_id TEXT NOT NULL DEFAULT '',
+  drive_link TEXT NOT NULL DEFAULT '',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (status IN ('queued', 'uploading', 'succeeded', 'retry_wait', 'dead', 'skipped')),
+  UNIQUE (platform, source_user_id, media_id)
+);
+
 CREATE TABLE IF NOT EXISTS mezon_users (
   mezon_user_id TEXT PRIMARY KEY,
   username TEXT NOT NULL DEFAULT '',
@@ -119,6 +149,8 @@ ALTER TABLE social_users ADD COLUMN IF NOT EXISTS scrape_claimed_at TIMESTAMPTZ;
 DROP INDEX IF EXISTS social_users_scrape_queue_idx;
 CREATE INDEX social_users_scrape_queue_idx ON social_users(platform, scrape_claimed_at, last_scraped_at, updated_at);
 CREATE INDEX IF NOT EXISTS bot_event_dedup_expires_idx ON bot_event_dedup(expires_at);
+CREATE INDEX IF NOT EXISTS media_download_jobs_source_user_idx ON media_download_jobs(platform, source_user_id, updated_at);
+CREATE INDEX IF NOT EXISTS media_download_jobs_retry_idx ON media_download_jobs(status, next_retry_at, updated_at);
 `);
   }
 
@@ -234,6 +266,128 @@ CREATE INDEX IF NOT EXISTS bot_event_dedup_expires_idx ON bot_event_dedup(expire
       [platform, sourceUserId, mediaId],
     );
     return rowCount > 0;
+  }
+
+  async upsertMediaDownloadJob({
+    platform,
+    sourceUserId,
+    sourceUsername = "",
+    mediaId,
+    postId = "",
+    mediaUrl = "",
+    mediaType = "",
+    previewUrl = "",
+    pageUrl = "",
+    filename = "",
+    mimeType = "",
+    metadata = {},
+  }) {
+    if (!platform || !sourceUserId || !mediaId) {
+      throw new Error("platform, sourceUserId and mediaId are required");
+    }
+    const { rows } = await this.pool.query(
+      `INSERT INTO media_download_jobs (
+         platform, source_user_id, source_username, media_id, post_id, media_url,
+         media_type, preview_url, page_url, filename, mime_type, metadata,
+         first_seen_at, last_seen_at, created_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, now(), now(), now(), now())
+       ON CONFLICT (platform, source_user_id, media_id) DO UPDATE SET
+         source_username = EXCLUDED.source_username,
+         post_id = EXCLUDED.post_id,
+         media_url = EXCLUDED.media_url,
+         media_type = EXCLUDED.media_type,
+         preview_url = EXCLUDED.preview_url,
+         page_url = EXCLUDED.page_url,
+         filename = EXCLUDED.filename,
+         mime_type = EXCLUDED.mime_type,
+         metadata = media_download_jobs.metadata || EXCLUDED.metadata,
+         last_seen_at = now(),
+         updated_at = now()
+       RETURNING id, platform, source_user_id, source_username, media_id, post_id, media_url,
+                 media_type, preview_url, page_url, filename, mime_type, status, attempt_count,
+                 last_error, next_retry_at, drive_file_id, drive_folder_id, drive_link, metadata,
+                 first_seen_at, last_seen_at, completed_at, created_at, updated_at`,
+      [
+        platform,
+        sourceUserId,
+        sourceUsername,
+        mediaId,
+        postId,
+        mediaUrl,
+        mediaType,
+        previewUrl,
+        pageUrl,
+        filename,
+        mimeType,
+        JSON.stringify(safeJSON(metadata)),
+      ],
+    );
+    return rows[0];
+  }
+
+  async markMediaDownloadJobUploading({ id }) {
+    if (!id) return;
+    await this.pool.query(
+      `UPDATE media_download_jobs
+       SET status = 'uploading',
+           attempt_count = attempt_count + 1,
+           last_error = '',
+           next_retry_at = NULL,
+           updated_at = now()
+       WHERE id = $1`,
+      [id],
+    );
+  }
+
+  async markMediaDownloadJobSucceeded({
+    id,
+    driveFileId = "",
+    driveFolderId = "",
+    driveLink = "",
+  }) {
+    if (!id) return;
+    await this.pool.query(
+      `UPDATE media_download_jobs
+       SET status = 'succeeded',
+           drive_file_id = COALESCE(NULLIF($2, ''), drive_file_id),
+           drive_folder_id = COALESCE(NULLIF($3, ''), drive_folder_id),
+           drive_link = COALESCE(NULLIF($4, ''), drive_link),
+           last_error = '',
+           next_retry_at = NULL,
+           completed_at = now(),
+           updated_at = now()
+       WHERE id = $1`,
+      [id, driveFileId || "", driveFolderId || "", driveLink || ""],
+    );
+  }
+
+  async markMediaDownloadJobSkipped({ id, reason = "" }) {
+    if (!id) return;
+    await this.pool.query(
+      `UPDATE media_download_jobs
+       SET status = 'skipped',
+           last_error = $2,
+           next_retry_at = NULL,
+           completed_at = now(),
+           updated_at = now()
+       WHERE id = $1`,
+      [id, reason || "skipped"],
+    );
+  }
+
+  async markMediaDownloadJobRetryWait({ id, error = "", retryDelaySeconds = 300 }) {
+    if (!id) return;
+    const retryDelay = Number.isInteger(retryDelaySeconds) && retryDelaySeconds > 0 ? retryDelaySeconds : 300;
+    await this.pool.query(
+      `UPDATE media_download_jobs
+       SET status = 'retry_wait',
+           last_error = $2,
+           next_retry_at = now() + ($3::text || ' seconds')::interval,
+           updated_at = now()
+       WHERE id = $1`,
+      [id, error || "upload failed", retryDelay],
+    );
   }
 
   async setReaction({ mediaAssetId, mezonUserId, reaction, messageId, channelId }) {
@@ -360,4 +514,8 @@ CREATE INDEX IF NOT EXISTS bot_event_dedup_expires_idx ON bot_event_dedup(expire
       [id, claimId],
     );
   }
+}
+
+function safeJSON(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
